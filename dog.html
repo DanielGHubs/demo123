@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dog Runner — Emoji Edition</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: grid; place-items: center; background: linear-gradient(180deg,#e8f1ff,#f7fbff); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+
+    .wrap { display: grid; gap: 12px; }
+
+    .hud { display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+    .hud .score { font-variant-numeric: tabular-nums; }
+
+    .game {
+      position: relative;
+      width: 720px; height: 260px;
+      background: #fff; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.12);
+      overflow: hidden; border: 2px solid #e6ecf5;
+    }
+
+    .sky { position: absolute; inset: 0; pointer-events: none; font-size: 28px; opacity: .85; }
+    .sky span { position: absolute; animation: drift 20s linear infinite; }
+    .sky .c1 { left: 10%; top: 18%; }
+    .sky .c2 { left: 60%; top: 8%; animation-duration: 26s; }
+    .sky .c3 { left: 80%; top: 30%; animation-duration: 22s; }
+
+    @keyframes drift { from { transform: translateX(0); } to { transform: translateX(-40px); } }
+
+    .ground { position: absolute; left: 0; right: 0; bottom: 40px; height: 2px; background: #cfd8e3; }
+
+    .dog { position: absolute; left: 60px; bottom: 40px; font-size: 54px; line-height: 1; transform: translateZ(0); }
+    .wag { animation: wag .25s ease-in-out infinite alternate; transform-origin: 60% 80%; display: inline-block; }
+    @keyframes wag { to { transform: rotate(10deg); } }
+
+    .obstacle { position: absolute; bottom: 40px; font-size: 46px; line-height: 1; }
+
+    .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.6); backdrop-filter: blur(3px); }
+    .card { background: white; padding: 14px 16px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.12); text-align: center; }
+    .btn { cursor: pointer; border: 0; border-radius: 999px; padding: 10px 14px; font-weight: 700; background: #4f46e5; color: #fff; box-shadow: 0 6px 16px rgba(79,70,229,.35); }
+    .btn:active { transform: translateY(1px); }
+
+    @media (max-width: 760px) {
+      .game { width: 92vw; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hud">
+      <div>🐶 Dog Runner</div>
+      <div class="score" id="score">Score: 0</div>
+    </div>
+
+    <div class="game" id="game" aria-label="Dog runner game" tabindex="0">
+      <div class="sky" aria-hidden="true">
+        <span class="c1">☁️</span>
+        <span class="c2">☁️</span>
+        <span class="c3">☁️</span>
+      </div>
+      <div class="ground"></div>
+      <div class="dog" id="dog" aria-label="Dog">🐶<span class="wag">🐾</span></div>
+      <div id="obstacles"></div>
+
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <div style="font-size:22px; margin-bottom:6px;">Tap/Click or press <kbd>Space</kbd> to jump</div>
+          <button class="btn" id="startBtn">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center; opacity:.8; font-size:14px;">Avoid 🌵 and 🪵 — survive as long as you can!</div>
+  </div>
+
+  <script>
+    // --- Basic settings ---
+    const gameEl = document.getElementById('game');
+    const dogEl = document.getElementById('dog');
+    const obstaclesEl = document.getElementById('obstacles');
+    const overlayEl = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const scoreEl = document.getElementById('score');
+
+    const GROUND_Y = 40; // px bottom baseline
+    const JUMP_V = 560;  // initial jump velocity (px/s)
+    const GRAVITY = 1600; // px/s^2
+    const START_SPEED = 280; // px/s obstacle speed
+
+    let running = false;
+    let dogY = 0; // vertical offset above ground in px
+    let vY = 0;   // vertical velocity
+    let lastT = 0;
+    let speed = START_SPEED;
+    let spawnTimer = 0;
+    let score = 0;
+
+    const emojis = ['🌵','🪵'];
+
+    function reset() {
+      running = false;
+      dogY = 0; vY = 0; lastT = 0; speed = START_SPEED; spawnTimer = 0; score = 0;
+      updateDogPosition();
+      [...obstaclesEl.children].forEach(n => n.remove());
+      scoreEl.textContent = 'Score: 0';
+    }
+
+    function start() {
+      reset();
+      overlayEl.style.display = 'none';
+      running = true;
+      gameEl.focus();
+      requestAnimationFrame(loop);
+    }
+
+    function gameOver() {
+      running = false;
+      overlayEl.innerHTML = `
+        <div class="card">
+          <div style="font-size:22px; margin-bottom:6px;">Game Over — Score: ${Math.floor(score)}</div>
+          <button class="btn" id="restartBtn">Restart</button>
+        </div>`;
+      overlayEl.style.display = 'grid';
+      document.getElementById('restartBtn').onclick = start;
+    }
+
+    function jump() {
+      if (!running) return;
+      // Allow jump only if on the ground
+      if (dogY <= 0.0001) {
+        vY = JUMP_V;
+      }
+    }
+
+    function updateDogPosition() {
+      const bottom = GROUND_Y + dogY;
+      dogEl.style.bottom = bottom + 'px';
+    }
+
+    function spawnObstacle() {
+      const span = document.createElement('span');
+      span.className = 'obstacle';
+      span.textContent = emojis[Math.random() < 0.5 ? 0 : 1];
+      span.style.left = gameEl.clientWidth + 'px';
+      span.style.bottom = GROUND_Y + 'px';
+      obstaclesEl.appendChild(span);
+    }
+
+    function rectsOverlap(a, b) {
+      const r1 = a.getBoundingClientRect();
+      const r2 = b.getBoundingClientRect();
+      return !(r1.right < r2.left || r1.left > r2.right || r1.bottom < r2.top || r1.top > r2.bottom);
+    }
+
+    function loop(t) {
+      if (!running) return;
+      if (!lastT) lastT = t;
+      const dt = Math.min(0.032, (t - lastT) / 1000); // clamp
+      lastT = t;
+
+      // Physics
+      vY -= GRAVITY * dt;
+      dogY = Math.max(0, dogY + vY * dt);
+      if (dogY === 0 && vY < 0) vY = 0;
+      updateDogPosition();
+
+      // Spawn obstacles
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        spawnObstacle();
+        // Decrease interval a bit over time for difficulty
+        const interval = Math.max(0.9, 1.6 - score * 0.002);
+        spawnTimer = interval;
+        // Slightly increase speed over time
+        speed = Math.min(520, START_SPEED + score * 0.6);
+      }
+
+      // Move and check obstacles
+      const toRemove = [];
+      for (const obs of obstaclesEl.children) {
+        const left = (parseFloat(obs.style.left) || gameEl.clientWidth) - speed * dt;
+        obs.style.left = left + 'px';
+        if (left < -60) toRemove.push(obs);
+        // Collision
+        if (rectsOverlap(dogEl, obs)) {
+          gameOver();
+          return;
+        }
+      }
+      toRemove.forEach(n => n.remove());
+
+      // Score by survival time
+      score += dt * 100;
+      scoreEl.textContent = 'Score: ' + Math.floor(score);
+
+      requestAnimationFrame(loop);
+    }
+
+    // Controls
+    startBtn.addEventListener('click', start);
+    gameEl.addEventListener('pointerdown', jump);
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        jump();
+      }
+    });
+
+    // Respect reduced motion
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (media.matches) {
+      // Lower speeds if user prefers less motion
+      speed = 200;
+    }
+  </script>
+</body>
+</html>
