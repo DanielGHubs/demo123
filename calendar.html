@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2025 Calendar — Arrow Keys + Click-to-Remind</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --panel: #121722;
+      --ink: #e7ecf3;
+      --muted: #9fb2cc;
+      --accent: #60a5fa;
+      --accent-2: #34d399;
+      --danger: #ef4444;
+      --grid-gap: 6px;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: radial-gradient(1200px 700px at 50% 0%, #101828 0%, #0c0f14 60%, #07090d);
+      color: var(--ink); font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+      display: grid; place-items: center;
+      padding: 18px;
+    }
+
+    .wrap { width: min(1100px, 96vw); }
+    header.calbar {
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
+      margin-bottom: 12px; padding: 12px 14px; border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 10px 35px rgba(0,0,0,0.35);
+    }
+    .title { text-align: center; font-weight: 800; letter-spacing: .4px; font-size: clamp(1.1rem, 2.5vw, 1.6rem); }
+
+    .navbtn {
+      -webkit-tap-highlight-color: transparent;
+      appearance: none; border: 0; border-radius: 10px; padding: 10px 12px; cursor: pointer; font-weight: 800;
+      color: var(--ink); background: rgba(96,165,250,0.18);
+      border: 1px solid rgba(96,165,250,0.35);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+    }
+    .navbtn:active { transform: translateY(1px); }
+
+    .hint { color: var(--muted); font-size: .9rem; margin-top: 8px; text-align: center; }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius);
+      padding: 12px; box-shadow: 0 12px 34px rgba(0,0,0,0.38);
+    }
+
+    .weekdays, .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--grid-gap); }
+
+    .weekdays div {
+      text-align: center; padding: 8px 0; font-weight: 700; color: var(--muted); letter-spacing: .4px;
+    }
+
+    .grid { --cell-size: min(12.5vw, 130px); }
+
+    .day {
+      position: relative; aspect-ratio: 1/1; min-height: 78px; border-radius: 12px; overflow: clip;
+      display: grid; grid-template-rows: auto 1fr; padding: 10px; gap: 6px; cursor: pointer;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      transition: transform .2s ease, background .2s ease, border-color .2s ease;
+    }
+    .day:hover { transform: translateY(-2px); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18); }
+    .day:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .num { font-weight: 800; color: var(--ink); }
+
+    .rem-indicator { position: absolute; right: 8px; top: 8px; display: inline-flex; align-items: center; gap: 6px; }
+    .pin { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.45)); }
+    .badge { font-size: .78rem; font-weight: 800; background: rgba(52,211,153,0.18); color: #d1fae5; border: 1px solid rgba(52,211,153,0.55); padding: 2px 6px; border-radius: 999px; }
+
+    .muted { opacity: .34 }
+
+    /* Sliding animation */
+    .grid { position: relative; }
+    .grid.anim { animation: slide .25s ease; }
+    @keyframes slide { from { opacity: 0; transform: translateX(var(--dir, 0)); } to { opacity: 1; transform: translateX(0); } }
+
+    /* Dialog */
+    dialog { border: none; border-radius: 16px; padding: 0; max-width: 560px; width: min(92vw, 560px); color: var(--ink);
+      background: linear-gradient(180deg, rgba(17,24,39,.95), rgba(17,24,39,.9));
+      box-shadow: 0 40px 100px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,0.06) inset;
+    }
+    dialog::backdrop { background: rgba(0,0,0,0.55); backdrop-filter: blur(3px); }
+
+    .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .dlg-title { font-weight: 800; }
+
+    .dlg-body { padding: 14px 16px; display: grid; gap: 12px; }
+    .rem-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px; }
+
+    .danger { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.45); color: #fecaca; }
+
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    input[type="text"] { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.18); color: var(--ink); border-radius: 10px; padding: 10px 12px; font: inherit; }
+
+    .btn { appearance: none; border: 0; border-radius: 10px; padding: 10px 12px; cursor: pointer; font-weight: 800; color: var(--ink); background: rgba(96,165,250,0.2); border: 1px solid rgba(96,165,250,0.45); }
+    .btn.secondary { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
+    .btn.green { background: rgba(52,211,153,0.2); border-color: rgba(52,211,153,0.55); }
+    .btn.red { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.55); }
+
+    .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 16px 16px; }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 720px) {
+      .weekdays div { font-size: .9rem }
+      .day { min-height: 66px }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" role="application" aria-label="2025 Calendar with reminders">
+    <header class="calbar">
+      <button id="prev" class="navbtn" aria-label="Previous month (ArrowLeft)">◀</button>
+      <div class="title" id="title">January 2025</div>
+      <button id="next" class="navbtn" aria-label="Next month (ArrowRight)">▶</button>
+    </header>
+
+    <div class="panel">
+      <div class="weekdays" aria-hidden="true">
+        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+      </div>
+      <div id="grid" class="grid" aria-live="polite" aria-atomic="true"></div>
+      <div class="hint">Tip: Use your keyboard — <strong>◀ / ▶</strong> to change months. Click a day to add or edit reminders.</div>
+    </div>
+  </div>
+
+  <dialog id="dlg">
+    <div class="dlg-head">
+      <div class="dlg-title" id="dlgDateLabel">Date</div>
+      <button class="btn secondary" id="dlgClose" aria-label="Close">✕</button>
+    </div>
+    <div class="dlg-body">
+      <div id="remEmpty" class="muted">No reminders yet. Add one below.</div>
+      <div id="remList" class="stack"></div>
+      <div class="row">
+        <input type="text" id="remInput" placeholder="New reminder… (press Enter)" />
+        <button class="btn green" id="addBtn">Add</button>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn secondary" id="clearAllBtn" title="Remove all reminders for this day">Clear Day</button>
+      <button class="btn" id="doneBtn">Done</button>
+    </div>
+  </dialog>
+
+  <script>
+    (function(){
+      const YEAR = 2025;
+      const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      const WEEKDAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const LS_PREFIX = "cal25:"; // localStorage key prefix
+
+      const titleEl = document.getElementById('title');
+      const grid = document.getElementById('grid');
+      const prevBtn = document.getElementById('prev');
+      const nextBtn = document.getElementById('next');
+
+      const dlg = document.getElementById('dlg');
+      const dlgDateLabel = document.getElementById('dlgDateLabel');
+      const remList = document.getElementById('remList');
+      const remInput = document.getElementById('remInput');
+      const addBtn = document.getElementById('addBtn');
+      const doneBtn = document.getElementById('doneBtn');
+      const dlgClose = document.getElementById('dlgClose');
+      const clearAllBtn = document.getElementById('clearAllBtn');
+      const remEmpty = document.getElementById('remEmpty');
+
+      // Start at current month if it's 2025, otherwise January
+      const now = new Date();
+      let month = (now.getFullYear() === YEAR) ? now.getMonth() : 0;
+      let focusedCell = null; // to restore focus after dialog
+      let currentYMD = null;  // yyyy-mm-dd for dialog
+
+      function fmtYMD(y,m,d){
+        const mm = String(m+1).padStart(2,'0');
+        const dd = String(d).padStart(2,'0');
+        return `${y}-${mm}-${dd}`;
+      }
+      function parseYMD(ymd){
+        const [y,m,d] = ymd.split('-').map(Number); return {y, m: m-1, d};
+      }
+      function keyFor(ymd){ return LS_PREFIX + ymd; }
+
+      function getReminders(ymd){
+        try { return JSON.parse(localStorage.getItem(keyFor(ymd)) || '[]'); } catch { return []; }
+      }
+      function setReminders(ymd, list){
+        localStorage.setItem(keyFor(ymd), JSON.stringify(list));
+      }
+
+      function daysInMonth(y, m){ return new Date(y, m+1, 0).getDate(); }
+      function firstDow(y, m){ return new Date(y, m, 1).getDay(); }
+
+      function render(dir = 0){
+        titleEl.textContent = `${MONTH_NAMES[month]} ${YEAR}`;
+        grid.innerHTML = '';
+        if (dir) {
+          grid.style.setProperty('--dir', dir < 0 ? '-16px' : '16px');
+          grid.classList.remove('anim');
+          void grid.offsetWidth; // reflow
+          grid.classList.add('anim');
+        }
+
+        // blanks until first day
+        const blanks = firstDow(YEAR, month);
+        for (let i=0;i<blanks;i++) grid.appendChild(blankCell());
+
+        const total = daysInMonth(YEAR, month);
+        for (let d=1; d<=total; d++) grid.appendChild(dayCell(d));
+      }
+
+      function blankCell(){
+        const el = document.createElement('div');
+        el.className = 'day muted';
+        el.setAttribute('aria-hidden', 'true');
+        return el;
+      }
+
+      function dayCell(d){
+        const el = document.createElement('div');
+        el.className = 'day';
+        el.setAttribute('role','button');
+        el.setAttribute('tabindex','0');
+        const ymd = fmtYMD(YEAR, month, d);
+        const date = new Date(YEAR, month, d);
+        const label = `${MONTH_NAMES[month]} ${d}, ${YEAR} — ${WEEKDAY_NAMES[date.getDay()]}`;
+        el.setAttribute('aria-label', `Set reminder for ${label}`);
+        el.dataset.ymd = ymd;
+
+        const num = document.createElement('div');
+        num.className = 'num';
+        num.textContent = d;
+        el.appendChild(num);
+
+        const list = getReminders(ymd);
+        if (list.length) {
+          const indicator = document.createElement('div');
+          indicator.className = 'rem-indicator';
+          const pin = document.createElement('span'); pin.textContent = '🔔'; pin.className = 'pin';
+          const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = list.length;
+          indicator.append(pin, badge);
+          el.appendChild(indicator);
+          el.title = list.join('\n');
+        }
+
+        el.addEventListener('click', () => openDialog(el));
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDialog(el); }});
+        return el;
+      }
+
+      function openDialog(cell){
+        focusedCell = cell; // keep for focus restore
+        currentYMD = cell.dataset.ymd;
+        const {y,m,d} = parseYMD(currentYMD);
+        dlgDateLabel.textContent = `${MONTH_NAMES[m]} ${d}, ${y}`;
+        renderRemList();
+        dlg.showModal();
+        setTimeout(() => remInput.focus(), 50);
+      }
+
+      function renderRemList(){
+        const list = getReminders(currentYMD);
+        remList.innerHTML = '';
+        remEmpty.style.display = list.length ? 'none' : 'block';
+        list.forEach((txt, i) => {
+          const row = document.createElement('div'); row.className = 'rem-item';
+          const span = document.createElement('span'); span.textContent = txt;
+          const del = document.createElement('button'); del.className = 'btn red'; del.textContent = 'Delete';
+          del.addEventListener('click', () => { removeReminder(i); });
+          row.append(span, del);
+          remList.appendChild(row);
+        });
+      }
+
+      function addReminder(){
+        const v = remInput.value.trim();
+        if (!v) return;
+        const list = getReminders(currentYMD);
+        list.push(v);
+        setReminders(currentYMD, list);
+        remInput.value = '';
+        renderRemList();
+        // update grid indicator immediately
+        render();
+      }
+      function removeReminder(idx){
+        const list = getReminders(currentYMD);
+        list.splice(idx,1);
+        setReminders(currentYMD, list);
+        renderRemList();
+        render();
+      }
+      function clearAll(){
+        setReminders(currentYMD, []);
+        renderRemList();
+        render();
+      }
+
+      function prevMonth(){ month = (month + 11) % 12; render(-1); }
+      function nextMonth(){ month = (month + 1) % 12; render(1); }
+
+      prevBtn.addEventListener('click', prevMonth);
+      nextBtn.addEventListener('click', nextMonth);
+
+      window.addEventListener('keydown', (e) => {
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return; // don't hijack typing
+        if (e.key === 'ArrowLeft') { e.preventDefault(); prevMonth(); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); nextMonth(); }
+      }, { passive: false });
+
+      addBtn.addEventListener('click', addReminder);
+      remInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addReminder(); }});
+      doneBtn.addEventListener('click', () => { dlg.close(); if (focusedCell) focusedCell.focus(); });
+      dlgClose.addEventListener('click', () => { dlg.close(); if (focusedCell) focusedCell.focus(); });
+      clearAllBtn.addEventListener('click', clearAll);
+
+      render();
+    })();
+  </script>
+</body>
+</html>
